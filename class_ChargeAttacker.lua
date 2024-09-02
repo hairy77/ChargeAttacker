@@ -1,5 +1,5 @@
 -- Class ChargeAttacker v0.24
--- By Hairy77
+-- By Hairy77 with thanks to Rob Graham for Help & Support
 --
 -- Usage:
 --      CA = ChargeAttacker:New('MainAttack')  -- (Mainattack being its designated name)
@@ -10,11 +10,12 @@
 
 ChargeAttacker = {
     ClassName = "ChargeAttacker",
-    maxReinforcements = 6,
+    maxReinforcements = 3,
     reinforceDistance = 10000,
     recalculatedistance = 1500,
     flankDistance = 3000, -- Distance for flanking
     excludeNames = {"NOMOVE", "POW"},
+    excludeReinfNames = {"NOREINF"},
     chargeRandom = true, -- Randomly decide whether to flank or charge directly
     retaliateGroupTypes = {
         "2S6 Tunguska",
@@ -119,6 +120,7 @@ function ChargeAttacker:HandleChargeAttack(EventData)
     local currentTime = timer.getTime()
 
     if attackGroup and defendGroup and self.active then
+     if attackGroup:IsHelicopter() then 
         env.info("Handling charge attack: Attacker: " .. attackGroup.GroupName .. " | Defender: " .. defendGroup.GroupName)
 
         -- Check if enough time has passed since the last hit
@@ -143,7 +145,8 @@ function ChargeAttacker:HandleChargeAttack(EventData)
         else
             env.info(defendGroup.GroupName .. " was attacked again too soon. Ignoring this hit.")
         end
-    end
+     end
+   end
 end
 
 function ChargeAttacker:CallReinforcements(attackGroup, defendGroup)
@@ -170,7 +173,7 @@ function ChargeAttacker:CallReinforcements(attackGroup, defendGroup)
                         local distance = groupCoord:Get2DDistance(attackerCoord) -- Compare distance between reinforcement group and attacker group
 
                         -- Check if the group is within reinforce distance
-                        if distance <= self.reinforceDistance then
+                        if distance <= self.reinforceDistance and reinforceCount <= self.maxReinforcements then
                             self:TaskGroupToAttack(group, attackGroup)
                             reinforceCount = reinforceCount + 1
                             env.info(group:GetName() .. " is reinforcing " .. defendGroupName .. ". Reinforce count: " .. reinforceCount)
@@ -217,16 +220,53 @@ function ChargeAttacker:TaskGroupToAttack(group, targetGroup)
         local wp1 = groupCoord:Translate(self.flankDistance, flankDirection)
         local wp2 = targetCoord:Translate(self.flankDistance, flankDirection)
         local wp3 = targetCoord:Translate(1000, initheading)
+        local wp0type = wp0:GetSurfaceType()
+        local wp1type = wp1:GetSurfaceType()
+        local wp2type = wp2:GetSurfaceType()
+        local wp3type = wp3:GetSurfaceType()
+
+        if wp0type == land.SurfaceType.LAND or wp0type == land.SurfaceType.ROAD then 
         Points[#Points + 1] = wp0:WaypointGround(50, "Vee")
+        else
+         env.info('Skipping WP0 - Type is not LAND or ROAD')   
+        end
+
+        if wp1type == land.SurfaceType.LAND or wp1type == land.SurfaceType.ROAD then 
         Points[#Points + 1] = wp1:WaypointGround(50, "Vee")
+    else
+        env.info('Skipping WP1 - Type is not LAND or ROAD')   
+       end
+
+       if wp2type == land.SurfaceType.LAND or wp2type == land.SurfaceType.ROAD then 
         Points[#Points + 1] = wp2:WaypointGround(50, "Vee")
+    else
+        env.info('Skipping WP2 - Type is not LAND or ROAD')   
+       end
+
+       if wp3type == land.SurfaceType.LAND or wp3type == land.SurfaceType.ROAD then        
         Points[#Points + 1] = wp3:WaypointGround(50, "Vee")
+    else
+        env.info('Skipping WP3 - Type is not LAND or ROAD')   
+       end
     else
         -- Direct charge
         local wp1 = groupCoord:Translate(distance * 0.5, initheading) -- Intermediate point halfway to the target
         local wp2 = targetCoord:Translate(1000, initheading) -- Final point 1000 meters from the target
+        local wp1type = wp1:GetSurfaceType()
+        local wp2type = wp2:GetSurfaceType()
+
+        if wp1type == land.SurfaceType.LAND or wp1type == land.SurfaceType.ROAD then 
         Points[#Points + 1] = wp1:WaypointGround(50, "Vee")
+    else
+        env.info('Skipping WP1 - Type is not LAND or ROAD')   
+       end
+
+       if wp2type == land.SurfaceType.LAND or wp2type == land.SurfaceType.ROAD then 
         Points[#Points + 1] = wp2:WaypointGround(50, "Vee")
+    else
+        env.info('Skipping WP2 - Type is not LAND or ROAD')   
+       end
+
     end
 
     local taskRoute = group:TaskRoute(Points)
@@ -243,6 +283,13 @@ function ChargeAttacker:IsRetaliateGroup(group)
 end
 
 function ChargeAttacker:IsReinforceGroup(group)
+    local groupName = group:GetName()
+    for _, excludeName in ipairs(self.excludeReinfNames) do
+        if string.find(groupName, excludeName) then
+            return false
+        end
+    end
+
     for _, unit in ipairs(group:GetUnits()) do
         if #self.reinforceGroupTypes == 0 or self:IsInList(unit:GetTypeName(), self.reinforceGroupTypes) then
             return true
